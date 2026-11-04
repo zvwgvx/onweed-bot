@@ -34,12 +34,12 @@ export const CV_RENAME_INPUT_ID = 'cv_name';
 export const CV_LIMIT_ID = 'cv_limit';
 export const CV_INVITE_ID = 'cv_invite';
 
-// Invited members may see, join and use the voice chat. Speak is intentionally
-// not force-allowed so a server-wide mute stays effective.
+// Invited members may see and join the voice chat. SendMessages and Speak are
+// intentionally not force-allowed: a member-level allow would override the Muted
+// role deny and let muted members chat or speak again.
 const VOICE_MEMBER_ALLOW = {
   ViewChannel: true,
   Connect: true,
-  SendMessages: true,
   ReadMessageHistory: true,
 };
 

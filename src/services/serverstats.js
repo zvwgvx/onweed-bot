@@ -1,16 +1,12 @@
-// Server stats message: a Components V2 "Server Report" card kept fresh in config.serverStatsChannelId.
+// Server stats message: a "Server Report" embed kept fresh in config.serverStatsChannelId.
 // Sections: Members (all/humans/bots), Online (live presence counts) and Server (boosts/channels/roles/created).
 // Optionally keeps a voice channel (config.serverStatsVoiceChannelId) named "All Members: N".
-import {
-  ContainerBuilder,
-  GatewayIntentBits,
-  IntentsBitField,
-  MessageFlags,
-  TextDisplayBuilder,
-} from 'discord.js';
+import { GatewayIntentBits, IntentsBitField, MessageFlags } from 'discord.js';
 import { config } from '../config.js';
 import { COLORS } from '../constants.js';
 import { getInstallMessage, setInstallMessage } from '../db.js';
+import { developerCreditLine } from '../utils/credit.js';
+import { baseEmbed } from '../utils/embeds.js';
 
 export const SERVER_STATS_MESSAGE_KEY = 'server_stats';
 export const SERVER_STATS_REFRESH_MS = 60_000;
@@ -52,40 +48,35 @@ async function collectMemberStats(guild, hasPresenceIntent) {
 
 // ---------- Card ----------
 
-export function buildServerStatsContainer(stats) {
+export function buildServerStatsEmbed(stats) {
   const onlineLines = stats.hasPresence
     ? [`Online · ${stats.online}`, `Idle · ${stats.idle}`, `Do Not Disturb · ${stats.dnd}`, `Offline · ${stats.offline}`]
     : ['Online · unavailable', 'Enable the Presence Intent in the Developer Portal for live counts.'];
 
-  return new ContainerBuilder()
-    .setAccentColor(COLORS.info)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## Server Report'))
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        section('[ • ] Members', [
-          `All Members · ${stats.total}`,
-          `Humans · ${stats.humans}`,
-          `Bots · ${stats.bots}`,
-        ]),
-      ),
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(section('[ • ] Online', onlineLines)),
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        section('[ • ] Server', [
-          `Boosts · ${stats.boosts} (Tier ${stats.boostTier})`,
-          `Channels · ${stats.textChannels} text · ${stats.voiceChannels} voice`,
-          `Roles · ${stats.roles}`,
-          `Created · ${stats.createdAt}`,
-        ]),
-      ),
-    );
+  const description = [
+    // Credit line is the first content line, right below the embed title.
+    developerCreditLine(),
+    section('[ • ] Members', [
+      `All Members · ${stats.total}`,
+      `Humans · ${stats.humans}`,
+      `Bots · ${stats.bots}`,
+    ]),
+    section('[ • ] Online', onlineLines),
+    section('[ • ] Server', [
+      `Boosts · ${stats.boosts} (Tier ${stats.boostTier})`,
+      `Channels · ${stats.textChannels} text · ${stats.voiceChannels} voice`,
+      `Roles · ${stats.roles}`,
+      `Created · ${stats.createdAt}`,
+    ]),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  return baseEmbed(COLORS.info).setTitle('Server Report').setDescription(description);
 }
 
 export function buildServerStatsPayload(stats) {
-  return { components: [buildServerStatsContainer(stats)], flags: MessageFlags.IsComponentsV2 };
+  return { embeds: [buildServerStatsEmbed(stats)] };
 }
 
 export async function collectServerStats(guild, client = null) {
@@ -151,9 +142,14 @@ export async function refreshServerStatsMessage(client) {
   if (stored?.message_id) {
     const message = await channel.messages.fetch(stored.message_id).catch(() => null);
     if (message && message.author.id === client.user.id) {
-      await message.edit(payload).catch(() => {});
-      await syncMembersVoiceChannel(guild, stats.total).catch(() => {});
-      return message;
+      // The old card was a Components V2 container. That flag can never be removed,
+      // so it is replaced once by the embed version instead of edited in place.
+      if (!message.flags.has(MessageFlags.IsComponentsV2)) {
+        await message.edit(payload).catch(() => {});
+        await syncMembersVoiceChannel(guild, stats.total).catch(() => {});
+        return message;
+      }
+      await message.delete().catch(() => null);
     }
   }
 

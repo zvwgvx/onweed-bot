@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS tickets (
   guild_id    TEXT NOT NULL,
   channel_id  TEXT NOT NULL,
   owner_id    TEXT NOT NULL,
+  type        TEXT NOT NULL DEFAULT 'general',
   status      TEXT NOT NULL DEFAULT 'open',
   closed_by   TEXT,
   closed_note TEXT,
@@ -80,6 +81,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_voice_channel ON voice_channels (channel_i
 // (the statement fails silently when the fresh schema above created it).
 try {
   db.exec('ALTER TABLE voice_channels ADD COLUMN number INTEGER NOT NULL DEFAULT 0');
+} catch {
+  // Column already exists.
+}
+
+// Legacy databases: add the ticket type column (existing rows count as general tickets).
+try {
+  db.exec("ALTER TABLE tickets ADD COLUMN type TEXT NOT NULL DEFAULT 'general'");
 } catch {
   // Column already exists.
 }
@@ -237,19 +245,23 @@ export const deleteInstallMessage = (guildId, key) =>
 
 // ---------- Tickets ----------
 
-export function createTicketRow({ guildId, channelId, ownerId, createdAt = Date.now() }) {
+export function createTicketRow({ guildId, channelId, ownerId, type = 'general', createdAt = Date.now() }) {
   const info = db
     .prepare(
-      'INSERT INTO tickets (guild_id, channel_id, owner_id, status, created_at) VALUES (?, ?, ?, \'open\', ?)',
+      'INSERT INTO tickets (guild_id, channel_id, owner_id, type, status, created_at) VALUES (?, ?, ?, ?, \'open\', ?)',
     )
-    .run(guildId, channelId, ownerId, createdAt);
+    .run(guildId, channelId, ownerId, type, createdAt);
   return db.prepare('SELECT * FROM tickets WHERE id = ?').get(Number(info.lastInsertRowid));
 }
 
-export const getOpenTicketByOwner = (guildId, userId) =>
+export const getOpenTicketByOwner = (guildId, userId, type = null) =>
   db
-    .prepare("SELECT * FROM tickets WHERE guild_id = ? AND owner_id = ? AND status = 'open' ORDER BY id DESC")
-    .get(guildId, userId) ?? null;
+    .prepare(
+      `SELECT * FROM tickets
+       WHERE guild_id = ? AND owner_id = ? AND status = 'open'${type ? ' AND type = ?' : ''}
+       ORDER BY id DESC`,
+    )
+    .all(...(type ? [guildId, userId, type] : [guildId, userId]))[0] ?? null;
 
 export const getTicketByChannel = (guildId, channelId) =>
   db.prepare('SELECT * FROM tickets WHERE guild_id = ? AND channel_id = ?').get(guildId, channelId) ?? null;
@@ -260,6 +272,11 @@ export function closeTicketRow(id, { closedBy, note = null }) {
   ).run(closedBy, note, Date.now(), id);
   return db.prepare('SELECT * FROM tickets WHERE id = ?').get(id) ?? null;
 }
+
+// Channel ids of every tracked ticket (checked when lifting the verification gate,
+// since ticket channels manage their own @everyone lock).
+export const listTicketChannelIds = (guildId) =>
+  db.prepare('SELECT channel_id FROM tickets WHERE guild_id = ?').all(guildId).map((r) => r.channel_id);
 
 // ---------- Dynamic voice channels (create-voice) ----------
 
@@ -293,3 +310,8 @@ export const setVoiceOwner = (guildId, channelId, ownerId) =>
   db
     .prepare('UPDATE voice_channels SET owner_id = ? WHERE guild_id = ? AND channel_id = ?')
     .run(ownerId, guildId, channelId);
+
+// Channel ids of every spawned voice room (checked when lifting the verification
+// gate, since private rooms manage their own @everyone lock).
+export const listVoiceChannelIds = (guildId) =>
+  db.prepare('SELECT channel_id FROM voice_channels WHERE guild_id = ?').all(guildId).map((r) => r.channel_id);

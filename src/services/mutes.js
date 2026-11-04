@@ -3,6 +3,7 @@ import { ChannelType } from 'discord.js';
 import { config, updateFileConfig } from '../config.js';
 import { createCase, getActiveCases, hideCase, setActiveCasesStatus, setCaseStatus } from '../db.js';
 import { logCase } from './log.js';
+import { sendPunishmentDm } from './notify.js';
 import { cancelCaseTimer, scheduleCase } from './scheduler.js';
 
 // Finds or creates the Muted role (config.muteRoleId takes priority; the created role id is persisted).
@@ -34,17 +35,20 @@ export async function ensureMuteRole(guild, { createIfMissing = true, reason = '
   return role;
 }
 
-// Channel overwrite applied to every channel for the Muted role.
+// Channel overwrite applied to every channel for the Muted role. Voice channels also
+// carry a text chat, so the text restrictions apply there too (not just Speak/Stream).
 export function muteOverwriteOptions(channel) {
-  if (channel.isVoiceBased()) return { Speak: false, Stream: false };
-  return {
+  const text = {
     SendMessages: false,
     SendMessagesInThreads: false,
     AddReactions: false,
     CreatePublicThreads: false,
     CreatePrivateThreads: false,
-    Speak: false,
+    SendVoiceMessages: false,
+    SendPolls: false,
   };
+  if (channel.isVoiceBased()) return { ...text, Speak: false, Stream: false };
+  return { ...text, Speak: false };
 }
 
 // The "muted bot commands" channel is the one place muted users may still talk/use commands.
@@ -153,6 +157,7 @@ export async function applyMute(guild, member, { moderatorId, reason = null, dur
   }
   if (durationMs) scheduleCase(caseRow.id);
   await logCase(guild, caseRow, { clientId });
+  await sendPunishmentDm(member, { guild, caseRow, clientId });
   return { caseRow, role };
 }
 

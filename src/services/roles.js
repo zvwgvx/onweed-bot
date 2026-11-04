@@ -1,5 +1,7 @@
-// Role management (created by =install / /install, auto-assigned on member join):
+// Role management (created by =install / /install):
 // - Member: basic access - view plus normal chat (special categories are configured in Discord).
+//   With verification enabled it is granted by the Verify button (services/verify.js);
+//   otherwise it is assigned to every human join.
 // - Bots: shared role for bot accounts.
 // - Bot ("Moderation Bot" by default): dedicated role for this bot, meant to sit at the top.
 import { PermissionsBitField } from 'discord.js';
@@ -49,14 +51,13 @@ async function ensureRole(guild, kind, { createIfMissing = true, reason = 'Role 
   }
   if (!role && !createIfMissing) return null;
   if (!role) {
-    role = await guild.roles.create({
-      name,
-      color,
-      hoist: Boolean(hoist),
-      mentionable: false,
-      permissions,
-      reason,
-    });
+    // Only include the keys that carry values: colourless roles (and empty permission
+    // sets) must be omitted entirely - newer discord.js converts them to numbers and
+    // rejects null with 'Unable to convert "null" to a number'.
+    const options = { name, hoist: Boolean(hoist), mentionable: false, reason };
+    if (color !== null && color !== undefined) options.color = color;
+    if (permissions?.length) options.permissions = permissions;
+    role = await guild.roles.create(options);
     console.log(`[roles] Created the "${role.name}" role (${role.id}).`);
   }
   if (config[idKey] !== role.id) {

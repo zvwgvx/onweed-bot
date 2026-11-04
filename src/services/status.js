@@ -1,16 +1,13 @@
-// Bot status message: a Components V2 "Status Report" card kept fresh in config.botStatusChannelId.
+// Bot status message: a "Status Report" embed kept fresh in config.botStatusChannelId.
 // Sections: Bot Status (CPU/memory/uptime), Environment (versions/platform) and Websocket (ping/shard/state).
 import os from 'node:os';
 import { createRequire } from 'node:module';
-import {
-  ContainerBuilder,
-  MessageFlags,
-  TextDisplayBuilder,
-  version as discordVersion,
-} from 'discord.js';
+import { MessageFlags, version as discordVersion } from 'discord.js';
 import { config } from '../config.js';
 import { COLORS } from '../constants.js';
 import { getInstallMessage, setInstallMessage } from '../db.js';
+import { developerCreditLine } from '../utils/credit.js';
+import { baseEmbed } from '../utils/embeds.js';
 
 export const STATUS_MESSAGE_KEY = 'status';
 export const STATUS_REFRESH_MS = 60_000;
@@ -79,47 +76,40 @@ const WS_STATES = {
 
 const section = (title, lines) => `**${title}**\n\`\`\`\n${lines.join('\n')}\n\`\`\``;
 
-export function buildStatusContainer(client) {
+export function buildStatusEmbed(client) {
   const cores = os.cpus().length;
   const totalMem = os.totalmem();
 
-  return new ContainerBuilder()
-    .setAccentColor(COLORS.info)
-    .addTextDisplayComponents(new TextDisplayBuilder().setContent('## Status Report'))
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        section('[ • ] Bot Status', [
-          `CPU Cores · ${cores} cores`,
-          `CPU Usage · ${cpuUsagePercent().toFixed(2)}%`,
-          `Mem Max · ${formatBytes(totalMem)}`,
-          `Mem Use · ${formatBytes(totalMem - os.freemem())}`,
-          `Uptime · ${formatUptime(process.uptime())}`,
-        ]),
-      ),
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        section('[ • ] Environment', [
-          `Node JS · ${process.version}`,
-          `Discord JS · ${discordVersion}`,
-          `Platform · ${os.platform()} ${os.arch()}`,
-          `Bot · ${pkg.name} v${pkg.version}`,
-        ]),
-      ),
-    )
-    .addTextDisplayComponents(
-      new TextDisplayBuilder().setContent(
-        section('[ • ] Websocket', [
-          `Ping · ${client.ws.ping}ms`,
-          `Shards · ${client.ws.shards.size}`,
-          `State · ${WS_STATES[client.ws.status] ?? 'Unknown'}`,
-        ]),
-      ),
-    );
+  const description = [
+    // Credit line is the first content line, right below the embed title.
+    developerCreditLine(),
+    section('[ • ] Bot Status', [
+      `CPU Cores · ${cores} cores`,
+      `CPU Usage · ${cpuUsagePercent().toFixed(2)}%`,
+      `Mem Max · ${formatBytes(totalMem)}`,
+      `Mem Use · ${formatBytes(totalMem - os.freemem())}`,
+      `Uptime · ${formatUptime(process.uptime())}`,
+    ]),
+    section('[ • ] Environment', [
+      `Node JS · ${process.version}`,
+      `Discord JS · ${discordVersion}`,
+      `Platform · ${os.platform()} ${os.arch()}`,
+      `Bot · ${pkg.name} v${pkg.version}`,
+    ]),
+    section('[ • ] Websocket', [
+      `Ping · ${client.ws.ping}ms`,
+      `Shards · ${client.ws.shards.size}`,
+      `State · ${WS_STATES[client.ws.status] ?? 'Unknown'}`,
+    ]),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  return baseEmbed(COLORS.info).setTitle('Status Report').setDescription(description);
 }
 
 export function buildStatusPayload(client) {
-  return { components: [buildStatusContainer(client)], flags: MessageFlags.IsComponentsV2 };
+  return { embeds: [buildStatusEmbed(client)] };
 }
 
 // Edits the stored status message, or posts a new one when missing.
@@ -142,8 +132,13 @@ export async function refreshStatusMessage(client) {
   if (stored?.message_id) {
     const message = await channel.messages.fetch(stored.message_id).catch(() => null);
     if (message && message.author.id === client.user.id) {
-      await message.edit(payload);
-      return message;
+      // The old card was a Components V2 container. That flag can never be removed,
+      // so it is replaced once by the embed version instead of edited in place.
+      if (!message.flags.has(MessageFlags.IsComponentsV2)) {
+        await message.edit(payload);
+        return message;
+      }
+      await message.delete().catch(() => null);
     }
   }
 

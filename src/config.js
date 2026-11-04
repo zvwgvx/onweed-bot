@@ -12,6 +12,7 @@ const DEFAULT_FILE_CONFIG = {
   muteRoleName: 'Muted',
   modRoleId: '',
   modLogChannelId: '',
+  auditLogChannelId: '',
   botRoleId: '',
   botRoleName: 'Moderation Bot',
   botPermsRoleId: '',
@@ -24,10 +25,24 @@ const DEFAULT_FILE_CONFIG = {
   botStatusChannelId: '',
   serverStatsChannelId: '',
   serverStatsVoiceChannelId: '',
-  tickets: { panelChannelId: '', staffRoleId: '' },
+  tickets: {
+    panelChannelId: '',
+    staffRoleId: '',
+    staffRoleIds: [],
+    generalCategoryId: '',
+    generalCategoryName: 'General Tickets',
+    applicationCategoryId: '',
+    applicationCategoryName: 'Guild Applications',
+    logChannelId: '',
+    archiveCategoryId: '',
+    archiveCategoryName: 'Ticket Archive',
+  },
   createVoice: { lobbyChannelId: '' },
   welcome: { channelId: '' },
+  verify: { channelId: '', channelName: 'verify', gate: true },
+  selfRoles: { channelId: '', channelName: 'self-role', roles: [] },
   botName: 'Guildframe',
+  developerCredit: '',
   doNotType: { channelId: '', action: 'kick', purgeMinutes: 30, rejoinUrl: 'https://discord.sentialab.org' },
   warnEscalation: { threshold: 0, duration: '1h' },
 };
@@ -35,7 +50,7 @@ const DEFAULT_FILE_CONFIG = {
 function loadFileConfig() {
   try {
     const raw = JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
-    return { ...DEFAULT_FILE_CONFIG, ...raw, doNotType: { ...DEFAULT_FILE_CONFIG.doNotType, ...raw.doNotType }, warnEscalation: { ...DEFAULT_FILE_CONFIG.warnEscalation, ...raw.warnEscalation }, tickets: { ...DEFAULT_FILE_CONFIG.tickets, ...raw.tickets }, createVoice: { ...DEFAULT_FILE_CONFIG.createVoice, ...raw.createVoice }, welcome: { ...DEFAULT_FILE_CONFIG.welcome, ...raw.welcome } };
+    return { ...DEFAULT_FILE_CONFIG, ...raw, doNotType: { ...DEFAULT_FILE_CONFIG.doNotType, ...raw.doNotType }, warnEscalation: { ...DEFAULT_FILE_CONFIG.warnEscalation, ...raw.warnEscalation }, tickets: { ...DEFAULT_FILE_CONFIG.tickets, ...raw.tickets }, createVoice: { ...DEFAULT_FILE_CONFIG.createVoice, ...raw.createVoice }, welcome: { ...DEFAULT_FILE_CONFIG.welcome, ...raw.welcome }, verify: { ...DEFAULT_FILE_CONFIG.verify, ...raw.verify }, selfRoles: { ...DEFAULT_FILE_CONFIG.selfRoles, ...raw.selfRoles } };
   } catch (err) {
     if (err.code === 'ENOENT') {
       console.warn('[config] config.json not found, falling back to defaults. Copy config.example.json to config.json.');

@@ -66,18 +66,20 @@ export function buildPunishmentsEmbed({ user, cases, page, totalPages, total, gu
 }
 
 const ACTION_TITLES = {
-  mute: 'Player Muted',
-  unmute: 'Player Unmuted',
-  kick: 'Player Kicked',
-  ban: 'Player Banned',
-  unban: 'Player Unbanned',
-  warn: 'Player Warned',
+  mute: 'User Muted',
+  unmute: 'User Unmuted',
+  kick: 'User Kicked',
+  ban: 'User Banned',
+  unban: 'User Unbanned',
+  warn: 'User Warned',
   note: 'Note Added',
   alert: 'Alert',
+  addrole: 'Role Added',
+  removerole: 'Role Removed',
 };
 
-// Action confirmation embed (matches the "Player Muted" style).
-export function buildActionEmbed({ action, target, durationMs = null, reason = null, guildName = null }) {
+// Action confirmation embed (matches the "User Muted" style).
+export function buildActionEmbed({ action, target, roleId = null, durationMs = null, reason = null, guildName = null }) {
   const meta = TYPE_META[action] ?? TYPE_META.note;
   const mention = `<@${target.id}>`;
   let sentence;
@@ -99,6 +101,12 @@ export function buildActionEmbed({ action, target, durationMs = null, reason = n
       break;
     case 'warn':
       sentence = `Warned ${mention}.`;
+      break;
+    case 'addrole':
+      sentence = `Gave ${mention} the ${roleId ? `<@&${roleId}>` : 'role'}.`;
+      break;
+    case 'removerole':
+      sentence = `Removed the ${roleId ? `<@&${roleId}>` : 'role'} from ${mention}.`;
       break;
     default:
       sentence = `${mention}`;

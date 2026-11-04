@@ -2,10 +2,12 @@
   "prefix": "=",
   "guildId": "",
   "botName": "Guildframe",
+  "developerCredit": "",        // optional first line on the status cards, e.g. "DEVELOPED BY @HANDLE"
   "muteRoleId": "",
   "muteRoleName": "Muted",
   "modRoleId": "",
   "modLogChannelId": "",
+  "auditLogChannelId": "",
   "botRoleId": "",
   "botRoleName": "Moderation Bot",
   "botPermsRoleId": "",
@@ -20,13 +22,31 @@
   "serverStatsVoiceChannelId": "",
   "tickets": {
     "panelChannelId": "",
-    "staffRoleId": ""
+    "staffRoleId": "",
+    "staffRoleIds": [],
+    "generalCategoryId": "",
+    "generalCategoryName": "General Tickets",
+    "applicationCategoryId": "",
+    "applicationCategoryName": "Guild Applications",
+    "logChannelId": "",
+    "archiveCategoryId": "",
+    "archiveCategoryName": "Ticket Archive"
   },
   "createVoice": {
     "lobbyChannelId": ""
   },
   "welcome": {
     "channelId": ""
+  },
+  "verify": {
+    "channelId": "",
+    "channelName": "verify",
+    "gate": true
+  },
+  "selfRoles": {
+    "channelId": "",              // self-role channel (leave empty; /install finds or creates it)
+    "channelName": "self-role",   // name used when /install creates the channel
+    "roles": []                   // entries: { "roleId": "", "label": "", "style": "Secondary" } (label/style optional)
   },
   "doNotType": {
     "channelId": "",

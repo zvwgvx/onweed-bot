@@ -24,6 +24,8 @@ export const TYPE_META = {
   ban: { label: 'BAN', color: COLORS.ban },
   unban: { label: 'UNBAN', color: COLORS.unban },
   note: { label: 'NOTE', color: COLORS.note },
+  addrole: { label: 'ADD ROLE', color: COLORS.success },
+  removerole: { label: 'REMOVE ROLE', color: COLORS.gray },
 };
 
 export const CASE_STATUS = {

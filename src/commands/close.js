@@ -4,7 +4,7 @@ import { errorEmbed } from '../utils/embeds.js';
 
 export const data = new SlashCommandBuilder()
   .setName('close')
-  .setDescription('Close this ticket; the channel is removed shortly after')
+  .setDescription('Close this ticket; the channel is archived for staff (hidden, not deleted)')
   .addStringOption((o) => o.setName('note').setDescription('Optional closing note (shown to staff in the log)').setMaxLength(500));
 
 export async function execute(interaction, client) {
@@ -30,7 +30,7 @@ export async function execute(interaction, client) {
     return interaction.reply({ embeds: [errorEmbed(result.error)], flags: MessageFlags.Ephemeral });
   }
   return interaction.reply({
-    embeds: [successEmbed(`Ticket closed${interaction.options.getString('note') ? ' with a note' : ''}. This channel will be removed shortly.`)],
+    embeds: [successEmbed(`Ticket closed${interaction.options.getString('note') ? ' with a note' : ''}. The channel is now archived and hidden from everyone except staff.`)],
     flags: MessageFlags.Ephemeral,
   });
 }

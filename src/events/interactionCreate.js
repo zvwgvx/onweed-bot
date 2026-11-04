@@ -2,7 +2,9 @@ import { Events, MessageFlags } from 'discord.js';
 import { config } from '../config.js';
 import { errorEmbed, successEmbed } from '../utils/embeds.js';
 import { isConfiguredGuild } from '../utils/permissions.js';
-import { TICKET_BUTTON_ID, TICKET_CLOSE_BUTTON_ID, canManageTicket, closeTicket, getTicketForChannel, openTicket } from '../services/tickets.js';
+import { TICKET_BUTTON_ID, TICKET_CLOSE_BUTTON_ID, TICKET_TYPES, canManageTicket, closeTicket, getTicketForChannel, openTicket, parseTicketButtonType } from '../services/tickets.js';
+import { VERIFY_BUTTON_ID, sweepVerifyPings, verifyMember } from '../services/verify.js';
+import { SELF_ROLE_BUTTON_PREFIX, sendSelfRolePing, toggleSelfRole } from '../services/selfroles.js';
 import {
   CV_INVITE_ID,
   CV_LIMIT_ID,
@@ -18,8 +20,44 @@ import {
 
 export const name = Events.InteractionCreate;
 
+// Shared verification flow for the Verify button (verify channel panel and DM card).
+// In DMs there is no guild on the interaction - verifyMember resolves the membership
+// against the configured guild; the reply stays a normal DM message (a DM channel is
+// private by definition, so ephemeral is not needed).
+async function handleVerifyInteraction(interaction, client, { fromDm = false } = {}) {
+  const result = await verifyMember(interaction).catch((err) => {
+    console.error('[verify] Verification failed:', err.message);
+    return { error: 'Verification failed. Try again in a moment.' };
+  });
+  const embed = result?.error
+    ? errorEmbed(result.error)
+    : result?.already
+      ? successEmbed('You are already verified - nothing to do.', 'Already verified')
+      : successEmbed('You are verified - the rest of the server is unlocked.', 'Verified');
+  const options = { embeds: [embed] };
+  if (!fromDm) options.flags = MessageFlags.Ephemeral;
+  await interaction.reply(options).catch(() => {});
+
+  const member = result?.member ?? interaction.member;
+  if (result?.verified && member) {
+    // First-time verification only: point the new member at the self-role panel and
+    // remove their fallback ping from the verify channel (if the DM failed on join).
+    await sendSelfRolePing(member).catch(() => {});
+    await sweepVerifyPings(member).catch(() => {});
+  }
+}
+
 export async function execute(interaction, client) {
-  if (!interaction.inGuild() || !isConfiguredGuild(interaction.guildId)) {
+  // Verify presses from the bot's DMs (the DM card carries the button): run the same
+  // verification flow instead of rejecting the interaction with the guild gate below.
+  if (!interaction.inGuild()) {
+    if (interaction.isButton() && interaction.customId === VERIFY_BUTTON_ID) {
+      await handleVerifyInteraction(interaction, client, { fromDm: true });
+    }
+    return;
+  }
+
+  if (!isConfiguredGuild(interaction.guildId)) {
     if (interaction.isRepliable()) {
       const reason = config.guildId
         ? `This bot only operates in the configured server (ID: ${config.guildId}).`
@@ -36,13 +74,17 @@ export async function execute(interaction, client) {
     return;
   }
 
-  // The single "Open Ticket" button on the ticket panel.
-  if (interaction.isButton() && interaction.customId === TICKET_BUTTON_ID) {
-    const result = await openTicket(interaction, client).catch((err) => {
+  // The ticket panel buttons - one per ticket type (general tickets / guild applications).
+  if (interaction.isButton() && parseTicketButtonType(interaction.customId) !== null) {
+    const typeKey = parseTicketButtonType(interaction.customId);
+    const result = await openTicket(interaction, client, typeKey).catch((err) => {
       console.error('[tickets] Open failed:', err.message);
       return { error: 'Opening the ticket failed. Try again in a moment.' };
     });
-    const embed = result?.error ? errorEmbed(result.error) : successEmbed(`Ticket created: <#${result.channel.id}>`);
+    const type = TICKET_TYPES[typeKey] ?? TICKET_TYPES.general;
+    const embed = result?.error
+      ? errorEmbed(result.error)
+      : successEmbed(`**${type.label}** created: <#${result.channel.id}>`);
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral }).catch(() => {});
     return;
   }
@@ -65,7 +107,9 @@ export async function execute(interaction, client) {
       console.error('[tickets] Close failed:', err.message);
       return { error: 'Closing the ticket failed. Try again in a moment.' };
     });
-    const embed = result?.error ? errorEmbed(result.error) : successEmbed('Ticket closed. This channel will be removed shortly.');
+    const embed = result?.error
+      ? errorEmbed(result.error)
+      : successEmbed('Ticket closed. The channel is now archived and hidden from everyone except staff.');
     await interaction.editReply({ embeds: [embed] }).catch(() => {});
     return;
   }
@@ -120,6 +164,27 @@ export async function execute(interaction, client) {
       return { error: 'Could not invite members. Try again in a moment.' };
     });
     const embed = result?.error ? errorEmbed(result.error) : successEmbed(result.success);
+    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
+
+  // The "Verify" button on the verification embed (and the DM card, resolved above).
+  if (interaction.isButton() && interaction.customId === VERIFY_BUTTON_ID) {
+    await handleVerifyInteraction(interaction, client);
+    return;
+  }
+
+  // Toggle buttons on the self-role panel (press = grant, press again = remove).
+  if (interaction.isButton() && interaction.customId.startsWith(SELF_ROLE_BUTTON_PREFIX)) {
+    const result = await toggleSelfRole(interaction).catch((err) => {
+      console.error('[selfroles] Toggle failed:', err.message);
+      return { error: 'Toggling the role failed. Try again in a moment.' };
+    });
+    const embed = result?.error
+      ? errorEmbed(result.error)
+      : result.removed
+        ? successEmbed(`Removed the **${result.role.name}** role.`, 'Role removed')
+        : successEmbed(`Added the **${result.role.name}** role.`, 'Role added');
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral }).catch(() => {});
     return;
   }

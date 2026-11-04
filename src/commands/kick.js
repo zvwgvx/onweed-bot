@@ -1,6 +1,7 @@
 import { MessageFlags, PermissionsBitField, SlashCommandBuilder } from 'discord.js';
 import { createCase, hideCase } from '../db.js';
 import { logCase } from '../services/log.js';
+import { sendPunishmentDm } from '../services/notify.js';
 import { buildActionEmbed, errorEmbed } from '../utils/embeds.js';
 import { canModerateMember, ensureBotPermissions, ensureModerator } from '../utils/permissions.js';
 
@@ -30,6 +31,11 @@ export async function execute(interaction, client) {
     moderatorId: interaction.user.id,
     type: 'kick',
     reason,
+  });
+  await sendPunishmentDm(member, {
+    guild: interaction.guild,
+    caseRow,
+    clientId: client.user.id,
   });
 
   try {

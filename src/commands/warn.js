@@ -2,6 +2,7 @@ import { MessageFlags, PermissionsBitField, SlashCommandBuilder } from 'discord.
 import { countActiveByType, createCase } from '../db.js';
 import { applyWarnEscalation } from '../services/escalation.js';
 import { logCase } from '../services/log.js';
+import { sendPunishmentDm } from '../services/notify.js';
 import { buildActionEmbed } from '../utils/embeds.js';
 import { ensureModerator } from '../utils/permissions.js';
 
@@ -30,6 +31,7 @@ export async function execute(interaction, client) {
     reason,
   });
   await logCase(guild, caseRow, { clientId: client.user.id });
+  await sendPunishmentDm(user, { guild, caseRow, clientId: client.user.id });
 
   const activeWarns = countActiveByType(guild.id, user.id, 'warn');
   const embed = buildActionEmbed({

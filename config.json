@@ -1,38 +1,58 @@
 {
   "prefix": "=",
-  "guildId": "1405933206720483358",
-  "botName": "Guildframe",
-  "muteRoleId": "1561561417293762614",
+  "guildId": "1502626204463792158",
+  "muteRoleId": "1567170837755334718",
   "muteRoleName": "Muted",
-  "modRoleId": "1561666177325994005",
-  "modLogChannelId": "1561666333232468100",
-  "botRoleId": "1544062946655740035",
-  "botRoleName": "SENTIA",
-  "botPermsRoleId": "",
-  "botPermsRoleName": "SENTIA Perms",
-  "botsRoleId": "1409528372085919855",
+  "modRoleId": "1567171005414252668",
+  "modLogChannelId": "1567171214156505158",
+  "auditLogChannelId": "1511632815744090213",
+  "botRoleId": "1567171342455935047",
+  "botRoleName": "OnWEED Offical",
+  "botPermsRoleId": "1567392686774816788",
+  "botPermsRoleName": "OnWEED Offical Perms",
+  "botsRoleId": "1566640744251523212",
   "botsRoleName": "Bot",
-  "memberRoleId": "1409121941377384550",
-  "memberRoleName": "Community",
-  "mutedBotCmdsChannelId": "1561666601680379914",
-  "botStatusChannelId": "1561666780685013053",
-  "serverStatsChannelId": "1561679421314826290",
+  "memberRoleId": "1507606008099377274",
+  "memberRoleName": "Vistors",
+  "mutedBotCmdsChannelId": "",
+  "botStatusChannelId": "1567172170793353380",
+  "serverStatsChannelId": "1567172196667883520",
   "serverStatsVoiceChannelId": "",
   "tickets": {
-    "panelChannelId": "1544252428629844069",
-    "staffRoleId": "1561692231109443594"
+    "panelChannelId": "1566526950330339379",
+    "staffRoleId": "1567171005414252668",
+    "staffRoleIds": [],
+    "generalCategoryId": "1566642256512028832",
+    "generalCategoryName": "General Tickets",
+    "applicationCategoryId": "1566642183795249153",
+    "applicationCategoryName": "Guild Applications",
+    "logChannelId": "1567434217346965525",
+    "archiveCategoryId": "1567435262664118382",
+    "archiveCategoryName": "Ticket Archive"
   },
   "createVoice": {
-    "lobbyChannelId": "1544271355208269824"
+    "lobbyChannelId": "1550795512435970058"
   },
   "welcome": {
-    "channelId": "1405933207295230107"
+    "channelId": "1507611978154381413"
   },
+  "verify": {
+    "channelId": "1567167624541110384",
+    "channelName": "verify",
+    "gate": true
+  },
+  "selfRoles": {
+    "channelId": "",
+    "channelName": "self-role",
+    "roles": []
+  },
+  "botName": "OnWEED",
+  "developerCredit": "DEVELOPED BY @zvwgvx",
   "doNotType": {
-    "channelId": "1561667318046662766",
+    "channelId": "1567165076270743582",
     "action": "kick",
     "purgeMinutes": 30,
-    "rejoinUrl": "https://discord.sentialab.org"
+    "rejoinUrl": "https://discord.gg/xvZcsBEc7H"
   },
   "warnEscalation": {
     "threshold": 0,

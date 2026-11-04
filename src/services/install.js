@@ -3,6 +3,7 @@
 import { PermissionsBitField } from 'discord.js';
 import { config } from '../config.js';
 import { COLORS } from '../constants.js';
+import { AUDIT_LOG_MESSAGE_KEY, applyAuditLogOverwrites, ensureAuditLogChannel, refreshAuditLogNotice } from './auditlog.js';
 import { deleteInstallMessage, getInstallMessage, listInstallMessages, setInstallMessage } from '../db.js';
 import { baseEmbed } from '../utils/embeds.js';
 import { applyMuteOverwritesAll, applyMutedCmdsOverwrite, ensureMuteRole } from './mutes.js';
@@ -10,16 +11,32 @@ import { ensureBotsRole, ensureBotPermsRole, ensureBotRole, ensureMemberRole } f
 import { STATUS_MESSAGE_KEY, refreshStatusMessage } from './status.js';
 import { SERVER_STATS_MESSAGE_KEY, refreshServerStatsMessage } from './serverstats.js';
 import { TRAP_MESSAGE_KEY, applyTrapOpenOverwrite, refreshTrapMessage } from './trap.js';
-import { TICKET_PANEL_MESSAGE_KEY, refreshTicketPanelMessage } from './tickets.js';
+import { TICKET_PANEL_MESSAGE_KEY, TICKET_TYPES, applyTicketStaffOverwrites, ensureArchiveCategory, ensureTicketCategory, refreshTicketPanelMessage } from './tickets.js';
+import {
+  VERIFY_MESSAGE_KEY,
+  applyVerifyGate,
+  ensureVerifyChannel,
+  liftVerifyGate,
+  refreshVerifyMessage,
+} from './verify.js';
+import {
+  SELF_ROLES_MESSAGE_KEY,
+  buildSelfRoleEntries,
+  ensureSelfRolesChannel,
+  refreshSelfRolesPanelMessage,
+} from './selfroles.js';
 
 export const MUTED_CMDS_MESSAGE_KEY = 'muted_cmds';
 
 export const INSTALL_MESSAGE_LABELS = {
   [TRAP_MESSAGE_KEY]: 'Do-not-type warning message',
   [MUTED_CMDS_MESSAGE_KEY]: 'Muted-commands notice',
+  [AUDIT_LOG_MESSAGE_KEY]: 'Audit log notice',
   [STATUS_MESSAGE_KEY]: 'Bot status message',
   [SERVER_STATS_MESSAGE_KEY]: 'Server stats message',
   [TICKET_PANEL_MESSAGE_KEY]: 'Ticket panel message',
+  [VERIFY_MESSAGE_KEY]: 'Verification message',
+  [SELF_ROLES_MESSAGE_KEY]: 'Self-role panel message',
 };
 
 // ---------- Muted-commands notice ----------
@@ -244,6 +261,23 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
     }
   }
 
+  // 5b. Audit log channel (Carl-bot style message logs) - found or created + sealed to staff
+  try {
+    const channel = await ensureAuditLogChannel(guild, { reason: by });
+    await applyAuditLogOverwrites(channel, by).catch(() => {}); // already sealed at creation; idempotent
+    const stored = getInstallMessage(guild.id, AUDIT_LOG_MESSAGE_KEY);
+    const message = await refreshAuditLogNotice(client);
+    results.push({
+      label: 'Audit log channel',
+      status: message ? (stored ? 'Updated' : 'Created') : 'Failed',
+      detail: message
+        ? `<#${channel.id}> - message logs (deletes with images/attachments, edits, bulk deletes) ${stored ? 'refreshed' : 'posted'}; sealed to the mod role and the bot`
+        : 'Could not post the notice (check permissions).',
+    });
+  } catch (err) {
+    results.push({ label: 'Audit log channel', status: 'Failed', detail: err.message });
+  }
+
   // 6. Do-not-type channel + Warning message
   if (!config.doNotType?.channelId) {
     results.push({
@@ -377,15 +411,21 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
     }
   }
 
-  // 10. Ticket panel (single Open-Ticket button; tickets spawn in the same category)
-  if (!config.tickets?.panelChannelId) {
-    results.push({
-      label: 'Ticket panel',
-      status: 'Not set',
-      detail: 'Add `tickets.panelChannelId` to config.json to publish the Open-Ticket button.',
-    });
-  } else {
-    try {
+  // 10. Tickets: per-type categories (auto-created, written back) + panel with one button per type
+  try {
+    const categoryParts = [];
+    for (const type of Object.values(TICKET_TYPES)) {
+      const category = await ensureTicketCategory(guild, type, { reason: by });
+      categoryParts.push(`${type.label}: <#${category.id}>`);
+    }
+
+    if (!config.tickets?.panelChannelId) {
+      results.push({
+        label: 'Ticket panel',
+        status: 'Not set',
+        detail: `Categories ready (${categoryParts.join(', ')}) - add \`tickets.panelChannelId\` to config.json to publish the panel buttons.`,
+      });
+    } else {
       const channel = await guild.channels.fetch(config.tickets.panelChannelId).catch(() => null);
       if (!channel || !channel.isTextBased()) {
         results.push({
@@ -396,19 +436,49 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
       } else {
         const stored = getInstallMessage(guild.id, TICKET_PANEL_MESSAGE_KEY);
         const message = await refreshTicketPanelMessage(client);
+        const staff = await applyTicketStaffOverwrites(guild, by).catch(() => ({ ok: 0, failed: 0, roles: 0 }));
         results.push({
           label: 'Ticket panel',
           status: message ? (stored ? 'Updated' : 'Created') : 'Failed',
           detail: message
-            ? `<#${channel.id}> - Open-Ticket button ${stored ? 'refreshed' : 'posted'}; tickets open in the same category, visible to the opener${
-                config.tickets.staffRoleId ? ` and <@&${config.tickets.staffRoleId}>` : ''
-              } only (category is taken from this channel)`
+            ? `<#${channel.id}> - one button per ticket type ${stored ? 'refreshed' : 'posted'}; ${categoryParts.join(
+                ', ',
+              )} - tickets spawn in those categories, visible to the opener${staff.roles ? ` + **${staff.roles}** staff role(s)` : ''} only${staff.ok ? ` (re-applied to ${staff.ok} open ticket(s)${staff.failed ? `, ${staff.failed} failed` : ''})` : ''}`
             : 'Could not post the ticket panel (check permissions).',
         });
       }
-    } catch (err) {
-      results.push({ label: 'Ticket panel', status: 'Failed', detail: err.message });
     }
+  } catch (err) {
+    results.push({ label: 'Ticket panel', status: 'Failed', detail: err.message });
+  }
+
+  // 10b. Ticket archive: closed tickets are kept (hidden, staff-only) + optional ticket log channel
+  try {
+    const archive = await ensureArchiveCategory(guild, { reason: by });
+    const logChannelId = config.tickets?.logChannelId;
+    if (!logChannelId) {
+      results.push({
+        label: 'Ticket archive',
+        status: 'Not set',
+        detail: `<#${archive.id}> - closed tickets move there (hidden from everyone except staff). Add \`tickets.logChannelId\` to also receive a closure summary + transcript for every ticket.`,
+      });
+    } else {
+      const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
+      const canSend = Boolean(
+        logChannel?.isTextBased() && logChannel.permissionsFor(guild.members.me)?.has(PermissionsBitField.Flags.SendMessages),
+      );
+      results.push({
+        label: 'Ticket archive',
+        status: logChannel ? (canSend ? 'OK' : 'Check permissions') : 'Failed',
+        detail: logChannel
+          ? `<#${archive.id}> - closed tickets are locked there hidden from everyone except staff; closure summaries + HTML transcripts go to <#${logChannel.id}>${
+              canSend ? '' : ' - the bot cannot send messages there'
+            }`
+          : 'The `tickets.logChannelId` channel was not found. Check the ID in config.json.',
+      });
+    }
+  } catch (err) {
+    results.push({ label: 'Ticket archive', status: 'Failed', detail: err.message });
   }
 
   // 11. Create-voice lobby (joining spawns a personal voice channel)
@@ -483,7 +553,66 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
     }
   }
 
-  // 13. Best-effort ordering (top to bottom): muted > member > bots > bot (visible) > perms (hidden).
+  // 14. Verification channel + gate + Verification message
+  try {
+    const verifyChannel = await ensureVerifyChannel(guild, { reason: by });
+
+    let gateText = 'all channels are visible (`verify.gate` is false, the gate was lifted)';
+    let gateStatus = null;
+    if (config.verify?.gate !== false) {
+      if (memberRole) {
+        const { ok, failed } = await applyVerifyGate(guild, memberRole, by);
+        gateText = `gate applied to ${ok} channel(s)${failed ? ` (${failed} failed)` : ''} - unverified members can only view <#${verifyChannel.id}> until they press Verify`;
+        if (failed) gateStatus = 'Check permissions';
+      } else {
+        gateText = 'gate NOT applied - no verified (Member) role';
+        gateStatus = 'Failed';
+      }
+    } else {
+      const { ok, failed } = await liftVerifyGate(guild, by);
+      gateText = `gate off - lifted from ${ok} channel(s)${failed ? ` (${failed} failed)` : ''}, everything is visible again`;
+    }
+
+    const stored = getInstallMessage(guild.id, VERIFY_MESSAGE_KEY);
+    const message = await refreshVerifyMessage(client);
+    results.push({
+      label: 'Verification',
+      status: message ? (gateStatus ?? (stored ? 'Updated' : 'Created')) : 'Failed',
+      detail: message
+        ? `<#${verifyChannel.id}> - Verify button ${stored ? 'refreshed' : 'posted'}; ${gateText} (Muted users, staff and bots keep their access; the gate is re-applied to new channels automatically)`
+        : 'Could not post the Verification message (check permissions).',
+    });
+  } catch (err) {
+    results.push({ label: 'Verification', status: 'Failed', detail: err.message });
+  }
+
+  // 15. Self-roles: self-role channel + toggle panel built from config.selfRoles.roles
+  try {
+    const configuredRoles = Array.isArray(config.selfRoles?.roles) ? config.selfRoles.roles : [];
+    if (!configuredRoles.some((entry) => entry?.roleId)) {
+      results.push({
+        label: 'Self roles',
+        status: 'Not set',
+        detail: 'Add `selfRoles.roles` entries (roleId, optional label/style) to config.json to enable the self-role panel.',
+      });
+    } else {
+      const selfRoleChannel = await ensureSelfRolesChannel(guild, { reason: by });
+      const entries = buildSelfRoleEntries(guild);
+      const stored = getInstallMessage(guild.id, SELF_ROLES_MESSAGE_KEY);
+      const message = await refreshSelfRolesPanelMessage(client);
+      results.push({
+        label: 'Self roles',
+        status: message ? (stored ? 'Updated' : 'Created') : 'Failed',
+        detail: message
+          ? `<#${selfRoleChannel.id}> - panel ${stored ? 'refreshed' : 'posted'} with **${entries.length}** toggle role(s) (config caps at 25); pressing grants/removes the role, verified members are pinged here after verifying`
+          : 'Could not post the self-role panel - no usable role entries (check `selfRoles.roles` and permissions).',
+      });
+    }
+  } catch (err) {
+    results.push({ label: 'Self roles', status: 'Failed', detail: err.message });
+  }
+
+  // 16. Best-effort ordering (top to bottom): muted > member > bots > bot (visible) > perms (hidden).
   // With Administrator the bot ignores role positions, so the perms role can rest at the very bottom.
   if (permsRole && memberRole && botsRole && botRole && muteRole) {
     const desired = [muteRole, memberRole, botsRole, botRole, permsRole];

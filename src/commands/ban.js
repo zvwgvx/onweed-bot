@@ -2,6 +2,7 @@ import { MessageFlags, PermissionsBitField, SlashCommandBuilder } from 'discord.
 import { MAX_BAN_MS } from '../constants.js';
 import { createCase, getActiveCases, hideCase } from '../db.js';
 import { logCase } from '../services/log.js';
+import { sendPunishmentDm } from '../services/notify.js';
 import { scheduleCase } from '../services/scheduler.js';
 import { formatDuration, parseDuration } from '../utils/duration.js';
 import { buildActionEmbed, errorEmbed } from '../utils/embeds.js';
@@ -70,6 +71,8 @@ export async function execute(interaction, client) {
     reason,
     durationMs,
   });
+  // DM before the ban: after it the bot may no longer share a guild with the user.
+  await sendPunishmentDm(user, { guild: interaction.guild, caseRow, clientId: client.user.id });
 
   try {
     await interaction.guild.bans.create(user.id, {

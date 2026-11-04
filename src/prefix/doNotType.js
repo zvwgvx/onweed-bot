@@ -5,6 +5,7 @@ import { applyMute } from '../services/mutes.js';
 import { sendKickNotice } from '../services/notices.js';
 import { purgeRecentMessages } from '../services/purge.js';
 import { logCase, sendModLog } from '../services/log.js';
+import { sendPunishmentDm } from '../services/notify.js';
 import { onTrapCaught } from '../services/trap.js';
 import { buildAuditEmbed, truncate } from '../utils/embeds.js';
 
@@ -92,6 +93,12 @@ export async function handleDoNotType(message, client) {
           moderatorId: client.user.id,
           type: 'ban',
           reason: 'Posted in the do-not-type channel',
+        });
+        // DM before the ban: after it the bot may no longer share a guild with the user.
+        await sendPunishmentDm(message.author, {
+          guild,
+          caseRow,
+          clientId: client.user.id,
         });
         try {
           await guild.bans.create(message.author.id, {
