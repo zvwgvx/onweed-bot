@@ -452,7 +452,7 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
     results.push({ label: 'Ticket panel', status: 'Failed', detail: err.message });
   }
 
-  // 10b. Ticket archive: closed tickets are kept (hidden, read-only) + optional ticket log channel
+  // 10b. Ticket archive (legacy archives only - new closes delete the channel) + optional ticket log channel
   try {
     const archive = await ensureArchiveCategory(guild, { reason: by });
     const sealed = await sealArchivedTickets(guild, by).catch(() => ({ ok: 0, failed: 0 }));
@@ -464,7 +464,7 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
       results.push({
         label: 'Ticket archive',
         status: 'Not set',
-        detail: `<#${archive.id}> - closed tickets move there (hidden from everyone except staff, no new messages allowed).${sealedPart} Add \`tickets.logChannelId\` to also receive a closure summary + transcript for every ticket.`,
+        detail: `<#${archive.id}> - legacy archive (closed tickets used to move there, still read-only; new closes delete their channel).${sealedPart} Add \`tickets.logChannelId\` to also receive a closure summary + transcript for every ticket.`,
       });
     } else {
       const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
@@ -475,7 +475,7 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
         label: 'Ticket archive',
         status: logChannel ? (canSend ? 'OK' : 'Check permissions') : 'Failed',
         detail: logChannel
-          ? `<#${archive.id}> - closed tickets are locked there hidden from everyone except staff and reject new messages;${sealedPart} closure summaries + HTML transcripts go to <#${logChannel.id}>${
+          ? `<#${archive.id}> - legacy archive (still read-only; new closes delete their channel);${sealedPart} closure summaries + HTML transcripts go to <#${logChannel.id}>${
               canSend ? '' : ' - the bot cannot send messages there'
             }`
           : 'The `tickets.logChannelId` channel was not found. Check the ID in config.json.',

@@ -250,8 +250,9 @@ export async function ensureTicketCategory(guild, type, { reason = 'Ticket categ
 
 // ---------- Archive ----------
 
-// Category holding closed tickets: hidden from everyone except ticket staff, found or
-// created on demand (and by /install), persisted back to config.json.
+// Legacy archive category: channels archived while the archive feature still existed
+// live here (still read-only). No new tickets are archived - closes delete their
+// channel. Found or created on demand (and by /install), persisted back to config.json.
 export async function ensureArchiveCategory(guild, { reason = 'Ticket archive category setup' } = {}) {
   const name = String(config.tickets?.archiveCategoryName || 'Ticket Archive');
   let category = config.tickets?.archiveCategoryId
@@ -280,9 +281,10 @@ export async function ensureArchiveCategory(guild, { reason = 'Ticket archive ca
   return category;
 }
 
-// Read-only overwrites for an archived ticket: everyone loses view and send, the
+// Read-only overwrites for legacy archived tickets: everyone loses view and send, the
 // staff roles keep view-only (their allow omits SendMessages, so the @everyone deny
-// stays in force for them too).
+// stays in force for them too). New closes delete the channel outright - these
+// overwrites only cover channels archived while the archive feature still existed.
 function archivedTicketOverwrites(guild) {
   const overwrites = [
     {
@@ -305,36 +307,9 @@ function archivedTicketOverwrites(guild) {
   return overwrites;
 }
 
-// Moves a closed ticket out of the active category, renames it `closed-...` and seals
-// it read-only: the opener and every added user/role lose access, staff keep view-only,
-// and the channel itself stays (no deletion) as the original record. Administrators
-// bypass overwrites, so messageCreate also deletes any new message at runtime.
-async function archiveTicketChannel(guild, channel, member) {
-  const reason = `Ticket archived (closed by ${member.id})`;
-  const category = await ensureArchiveCategory(guild, { reason }).catch((err) => {
-    console.error('[tickets] Archive category unavailable:', err.message);
-    return null;
-  });
-
-  const overwrites = archivedTicketOverwrites(guild);
-  await channel.permissionOverwrites
-    .set(overwrites, reason)
-    .catch((err) => console.error('[tickets] Failed to seal the archived ticket:', err.message));
-
-  if (category) {
-    await channel
-      .setParent(category.id, { lockPermissions: false, reason })
-      .catch((err) => console.error('[tickets] Failed to move the ticket to the archive:', err.message));
-  }
-
-  const base = channel.name.replace(/^closed-/, '');
-  const name = `closed-${base}`.slice(0, 100).replace(/-+$/, '');
-  await channel.setName(name, reason).catch((err) => console.error('[tickets] Failed to rename the ticket:', err.message));
-}
-
-// Re-applies the read-only seal to every already-archived ticket channel. /install
-// runs this so channels closed before the read-only rule (or reopened for writing by
-// older installs) are sealed too; channels already denying SendMessages are skipped,
+// Re-applies the read-only seal to every remaining archived ticket channel. New closes
+// delete the channel outright, so this only ever touches legacy archives from before
+// the archive feature was removed; channels already denying SendMessages are skipped,
 // keeping the pass idempotent. Returns { ok, failed }.
 export async function sealArchivedTickets(guild, reason = 'Seal archived ticket read-only') {
   const sendFlag = PermissionsBitField.Flags.SendMessages;
@@ -440,8 +415,8 @@ ${rows || '<div class="msg"><em class="muted">No messages.</em></div>'}
 
 // ---------- Ticket log channel ----------
 
-// Posts the closure summary (opener, closer, note, link to the archived channel) plus
-// the transcript attachment to tickets.logChannelId. Returns the sent message or null.
+// Posts the closure summary (opener, closer, note, channel link) plus the transcript
+// attachment to tickets.logChannelId. Returns the sent message or null.
 async function sendTicketLog(guild, { channel, ticket, member, note, transcript }) {
   const logChannelId = config.tickets?.logChannelId;
   if (!logChannelId) return null;
@@ -455,7 +430,7 @@ async function sendTicketLog(guild, { channel, ticket, member, note, transcript 
   const type = TICKET_TYPES[ticket.type] ?? TICKET_TYPES.general;
   const embed = baseEmbed(COLORS.info)
     .setTitle('Ticket Closed')
-    .setDescription(`**${type.label}** • <#${channel.id}> (archived, staff-only)`)
+    .setDescription(`**${type.label}** • \`#${channel.name}\` (<#${channel.id}>)`)
     .addFields(
       { name: 'Opened by', value: `<@${ticket.owner_id}>`, inline: true },
       { name: 'Closed by', value: `<@${member.id}>`, inline: true },
@@ -644,9 +619,9 @@ export async function removeFromTicket(guild, ticket, target, member) {
   return { channel };
 }
 
-// Posts the closing embed, marks the row closed, archives the channel (kept, renamed
-// `closed-...`, moved to the archive category and sealed to staff), logs the closure
-// with a transcript to the ticket log channel, and audits to the mod log.
+// Posts the closing embed, marks the row closed, saves a transcript with the closure
+// summary to the ticket log channel, deletes the channel (the archive feature was
+// removed - the transcript is the surviving record) and audits to the mod log.
 export async function closeTicket(guild, ticket, member, note, client) {
   const channel = await guild.channels.fetch(ticket.channel_id).catch(() => null);
   if (!channel) return { error: 'The ticket channel no longer exists.' };
@@ -661,7 +636,7 @@ export async function closeTicket(guild, ticket, member, note, client) {
             [
               `**Ticket closed** by <@${member.id}>.`,
               note ? `Note: ${truncate(note, 400)}` : null,
-              'This channel is now archived - only ticket staff can see it.',
+              'This channel will be removed now - a transcript has been sent to the ticket log.',
             ]
               .filter(Boolean)
               .join('\n'),
@@ -670,13 +645,12 @@ export async function closeTicket(guild, ticket, member, note, client) {
     })
     .catch(() => {});
 
-  // Transcript of everything posted before the archive; failures never block the close.
+  // Transcript of everything ever posted; failures never block the close.
   const transcript = await buildTranscriptFile(channel, ticket, member, note).catch((err) => {
     console.error('[tickets] Failed to build the transcript:', err.message);
     return null;
   });
 
-  await archiveTicketChannel(guild, channel, member);
   await sendTicketLog(guild, { channel, ticket, member, note, transcript });
 
   const owner = await guild.members.fetch(ticket.owner_id).catch(() => null);
@@ -685,15 +659,19 @@ export async function closeTicket(guild, ticket, member, note, client) {
     guild,
     buildAuditEmbed({
       title: 'Ticket Closed',
-      description: `Ticket <#${channel.id}>${typeLabel ? ` (${typeLabel})` : ''} - opened by ${
+      description: `Ticket \`#${channel.name}\` (<#${channel.id}>)${typeLabel ? ` (${typeLabel})` : ''} - opened by ${
         owner ? `<@${owner.id}>` : `<@${ticket.owner_id}>`
-      } - closed by <@${member.id}>. Archived and locked to staff; no messages are deleted.`,
+      } - closed by <@${member.id}>. The channel was deleted; the closure summary + HTML transcript went to the ticket log.`,
       color: COLORS.warn,
       fields: note ? [{ name: 'Note', value: truncate(note, 400) }] : [],
     }),
   );
 
-  return { closed: true, archived: true, channelId: channel.id };
+  await channel.delete(`Ticket closed by ${member.id} (${member.id})`).catch((err) =>
+    console.error('[tickets] Failed to delete the closed ticket channel:', err.message),
+  );
+
+  return { closed: true, channelId: channel.id };
 }
 
 // ---------- Staff role management (=ticketroleadd / =ticketroleremove) ----------

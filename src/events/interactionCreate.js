@@ -111,7 +111,7 @@ export async function execute(interaction, client) {
     });
     const embed = result?.error
       ? errorEmbed(result.error)
-      : successEmbed('Ticket closed. The channel is now archived and hidden from everyone except staff.');
+      : successEmbed('Ticket closed. The channel has been deleted - the transcript went to the ticket log.');
     await interaction.editReply({ embeds: [embed] }).catch(() => {});
     return;
   }

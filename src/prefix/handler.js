@@ -679,7 +679,7 @@ async function closeTicketCommand(message, args, client) {
   const result = await closeTicket(message.guild, ticket, message.member, note, client);
   if (result?.error) return message.reply({ embeds: [errorEmbed(result.error)] });
   return message.reply({
-    embeds: [successEmbed('Ticket closed. The channel is now archived and hidden from everyone except staff.', 'Ticket')],
+    embeds: [successEmbed('Ticket closed. The channel has been deleted - the transcript went to the ticket log.', 'Ticket')],
   });
 }
 

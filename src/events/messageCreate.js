@@ -21,10 +21,11 @@ export async function execute(message, client) {
 
   if (message.author.bot) return;
 
-  // Closed (archived) ticket channels accept no new messages from anyone -
-  // including administrators, whose Administrator permission bypasses channel
-  // overwrites. The message is removed before it can trigger prefix commands;
-  // this also covers archives sealed before the read-only overwrites existed.
+  // Closed ticket channels accept no new messages from anyone - including
+  // administrators, whose Administrator permission bypasses channel overwrites.
+  // New closes delete the channel outright (transcript lives in the ticket log);
+  // this guard only covers legacy archived channels that still exist - and it
+  // runs before prefix handling, so commands are never processed in them.
   // Threads inside a ticket count as the parent ticket channel.
   const ticketChannelId = message.channel?.isThread?.() ? message.channel.parentId : message.channelId;
   const ticket = ticketChannelId ? getTicketByChannel(message.guild.id, ticketChannelId) : null;
