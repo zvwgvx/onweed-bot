@@ -3,7 +3,7 @@
 // Member (verified) role, which carries the unlock allows on every other channel.
 // In gate mode (config.verify.gate) /install denies @everyone ViewChannel on all
 // other channels/categories, so nobody can view anything until they are verified.
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField } from 'discord.js';
 import { config, updateFileConfig } from '../config.js';
 import { COLORS } from '../constants.js';
 import { getInstallMessage, listTicketChannelIds, listVoiceChannelIds, setInstallMessage } from '../db.js';
@@ -223,7 +223,15 @@ export async function verifyMember(interaction) {
   try {
     await member.roles.add(role, reason);
   } catch (err) {
-    console.error(`[verify] Failed to add the role to ${interaction.user.id}:`, err.message);
+    const me = guild.members.me;
+    const top = me?.roles?.highest;
+    console.error(
+      `[verify] Failed to add the role to ${interaction.user.id}: ${err.message} ` +
+        `(role "${role.name}" (${role.id}) - managed=${role.managed}, position=${role.position}; ` +
+        `bot top role: "${top?.name}" (${top?.position ?? 'n/a'}), admin=${Boolean(
+          me?.permissions?.has?.(PermissionsBitField.Flags.Administrator),
+        )})`,
+    );
     return { error: 'Could not assign the verified role - try again in a moment.' };
   }
   return { verified: true, role, member };
