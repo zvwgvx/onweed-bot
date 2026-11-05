@@ -88,9 +88,14 @@ export async function canModerateMember(interaction, targetMember) {
     return false;
   };
 
-  if (targetMember.id === interaction.user.id) return deny('You cannot moderate yourself.');
+  // The superuser whitelist may moderate themselves (self-mute/self-kick tests).
+  if (targetMember.id === interaction.user.id && !isBotSuperuser(interaction.user.id)) {
+    return deny('You cannot moderate yourself.');
+  }
   if (targetMember.id === me.id) return deny('The bot cannot moderate itself.');
-  if (targetMember.id === interaction.guild.ownerId) return deny('You cannot moderate the server owner.');
+  if (targetMember.id === interaction.guild.ownerId) {
+    return deny('You cannot moderate the server owner.');
+  }
   if (targetMember.roles.highest.position >= me.roles.highest.position) {
     return deny("That member's highest role is equal to or above the bot's highest role.");
   }
@@ -135,9 +140,14 @@ export function canModerateMemberMessage(message, targetMember) {
     return false;
   };
 
-  if (targetMember.id === message.author.id) return deny('You cannot moderate yourself.');
+  // The superuser whitelist may moderate themselves (self-mute/self-kick tests).
+  if (targetMember.id === message.author.id && !isBotSuperuser(message.author.id)) {
+    return deny('You cannot moderate yourself.');
+  }
   if (targetMember.id === me.id) return deny('The bot cannot moderate itself.');
-  if (targetMember.id === message.guild.ownerId) return deny('You cannot moderate the server owner.');
+  if (targetMember.id === message.guild.ownerId) {
+    return deny('You cannot moderate the server owner.');
+  }
   if (targetMember.roles.highest.position >= me.roles.highest.position) {
     return deny("That member's highest role is equal to or above the bot's highest role.");
   }
