@@ -11,7 +11,7 @@ import { ensureBotsRole, ensureBotPermsRole, ensureBotRole, ensureMemberRole } f
 import { STATUS_MESSAGE_KEY, refreshStatusMessage } from './status.js';
 import { SERVER_STATS_MESSAGE_KEY, refreshServerStatsMessage } from './serverstats.js';
 import { TRAP_MESSAGE_KEY, applyTrapOpenOverwrite, refreshTrapMessage } from './trap.js';
-import { TICKET_PANEL_MESSAGE_KEY, TICKET_TYPES, applyTicketStaffOverwrites, ensureArchiveCategory, ensureTicketCategory, refreshTicketPanelMessage } from './tickets.js';
+import { TICKET_PANEL_MESSAGE_KEY, TICKET_TYPES, applyTicketStaffOverwrites, ensureArchiveCategory, ensureTicketCategory, refreshTicketPanelMessage, sealArchivedTickets } from './tickets.js';
 import {
   VERIFY_MESSAGE_KEY,
   applyVerifyGate,
@@ -452,15 +452,19 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
     results.push({ label: 'Ticket panel', status: 'Failed', detail: err.message });
   }
 
-  // 10b. Ticket archive: closed tickets are kept (hidden, staff-only) + optional ticket log channel
+  // 10b. Ticket archive: closed tickets are kept (hidden, read-only) + optional ticket log channel
   try {
     const archive = await ensureArchiveCategory(guild, { reason: by });
+    const sealed = await sealArchivedTickets(guild, by).catch(() => ({ ok: 0, failed: 0 }));
+    const sealedPart = sealed.ok
+      ? ` **${sealed.ok}** archived ticket(s) re-sealed read-only${sealed.failed ? `, **${sealed.failed}** failed` : ''}.`
+      : '';
     const logChannelId = config.tickets?.logChannelId;
     if (!logChannelId) {
       results.push({
         label: 'Ticket archive',
         status: 'Not set',
-        detail: `<#${archive.id}> - closed tickets move there (hidden from everyone except staff). Add \`tickets.logChannelId\` to also receive a closure summary + transcript for every ticket.`,
+        detail: `<#${archive.id}> - closed tickets move there (hidden from everyone except staff, no new messages allowed).${sealedPart} Add \`tickets.logChannelId\` to also receive a closure summary + transcript for every ticket.`,
       });
     } else {
       const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
@@ -471,7 +475,7 @@ export async function runInstall(client, guild, { installerId = null } = {}) {
         label: 'Ticket archive',
         status: logChannel ? (canSend ? 'OK' : 'Check permissions') : 'Failed',
         detail: logChannel
-          ? `<#${archive.id}> - closed tickets are locked there hidden from everyone except staff; closure summaries + HTML transcripts go to <#${logChannel.id}>${
+          ? `<#${archive.id}> - closed tickets are locked there hidden from everyone except staff and reject new messages;${sealedPart} closure summaries + HTML transcripts go to <#${logChannel.id}>${
               canSend ? '' : ' - the bot cannot send messages there'
             }`
           : 'The `tickets.logChannelId` channel was not found. Check the ID in config.json.',

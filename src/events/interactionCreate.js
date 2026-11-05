@@ -5,6 +5,7 @@ import { isConfiguredGuild } from '../utils/permissions.js';
 import { TICKET_BUTTON_ID, TICKET_CLOSE_BUTTON_ID, TICKET_TYPES, canManageTicket, closeTicket, getTicketForChannel, openTicket, parseTicketButtonType } from '../services/tickets.js';
 import { VERIFY_BUTTON_ID, sweepVerifyPings, verifyMember } from '../services/verify.js';
 import { SELF_ROLE_BUTTON_PREFIX, sendSelfRolePing, toggleSelfRole } from '../services/selfroles.js';
+import { isCommandAllowed, LOCKDOWN, lockdownEmbed } from '../utils/lockdown.js';
 import {
   CV_INVITE_ID,
   CV_LIMIT_ID,
@@ -42,7 +43,8 @@ async function handleVerifyInteraction(interaction, client, { fromDm = false } =
   if (result?.verified && member) {
     // First-time verification only: point the new member at the self-role panel and
     // remove their fallback ping from the verify channel (if the DM failed on join).
-    await sendSelfRolePing(member).catch(() => {});
+    // The self-role panel is locked while the lockdown is on, so skip the pointer too.
+    if (!LOCKDOWN.enabled) await sendSelfRolePing(member).catch(() => {});
     await sweepVerifyPings(member).catch(() => {});
   }
 }
@@ -174,8 +176,13 @@ export async function execute(interaction, client) {
     return;
   }
 
-  // Toggle buttons on the self-role panel (press = grant, press again = remove).
+  // Toggle buttons on the self-role panel (press = grant, press again = remove) -
+  // disabled while the bot is locked down.
   if (interaction.isButton() && interaction.customId.startsWith(SELF_ROLE_BUTTON_PREFIX)) {
+    if (LOCKDOWN.enabled) {
+      await interaction.reply({ embeds: [lockdownEmbed()], flags: MessageFlags.Ephemeral }).catch(() => {});
+      return;
+    }
     const result = await toggleSelfRole(interaction).catch((err) => {
       console.error('[selfroles] Toggle failed:', err.message);
       return { error: 'Toggling the role failed. Try again in a moment.' };
@@ -202,6 +209,13 @@ export async function execute(interaction, client) {
 
   const command = client.commands.get(interaction.commandName);
   if (!command) return;
+
+  // Global lockdown: every command beyond the kept systems (verify/voice/ticket)
+  // answers with the red disable notice instead of running.
+  if (LOCKDOWN.enabled && !isCommandAllowed(interaction.commandName)) {
+    await interaction.reply({ embeds: [lockdownEmbed()], flags: MessageFlags.Ephemeral }).catch(() => {});
+    return;
+  }
 
   try {
     await command.execute(interaction, client);

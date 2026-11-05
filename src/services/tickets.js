@@ -280,9 +280,35 @@ export async function ensureArchiveCategory(guild, { reason = 'Ticket archive ca
   return category;
 }
 
+// Read-only overwrites for an archived ticket: everyone loses view and send, the
+// staff roles keep view-only (their allow omits SendMessages, so the @everyone deny
+// stays in force for them too).
+function archivedTicketOverwrites(guild) {
+  const overwrites = [
+    {
+      id: guild.roles.everyone.id,
+      deny: [
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.SendMessagesInThreads,
+        PermissionsBitField.Flags.CreatePublicThreads,
+        PermissionsBitField.Flags.CreatePrivateThreads,
+      ],
+    },
+  ];
+  for (const roleId of ticketAccessRoleIds(guild)) {
+    overwrites.push({
+      id: roleId,
+      allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory],
+    });
+  }
+  return overwrites;
+}
+
 // Moves a closed ticket out of the active category, renames it `closed-...` and seals
-// it to ticket staff only: the opener and every added user/role lose access, the
-// channel itself stays (no deletion) as the original record.
+// it read-only: the opener and every added user/role lose access, staff keep view-only,
+// and the channel itself stays (no deletion) as the original record. Administrators
+// bypass overwrites, so messageCreate also deletes any new message at runtime.
 async function archiveTicketChannel(guild, channel, member) {
   const reason = `Ticket archived (closed by ${member.id})`;
   const category = await ensureArchiveCategory(guild, { reason }).catch((err) => {
@@ -290,13 +316,7 @@ async function archiveTicketChannel(guild, channel, member) {
     return null;
   });
 
-  const overwrites = [{ id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] }];
-  for (const roleId of ticketAccessRoleIds(guild)) {
-    overwrites.push({
-      id: roleId,
-      allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.ReadMessageHistory],
-    });
-  }
+  const overwrites = archivedTicketOverwrites(guild);
   await channel.permissionOverwrites
     .set(overwrites, reason)
     .catch((err) => console.error('[tickets] Failed to seal the archived ticket:', err.message));
@@ -310,6 +330,38 @@ async function archiveTicketChannel(guild, channel, member) {
   const base = channel.name.replace(/^closed-/, '');
   const name = `closed-${base}`.slice(0, 100).replace(/-+$/, '');
   await channel.setName(name, reason).catch((err) => console.error('[tickets] Failed to rename the ticket:', err.message));
+}
+
+// Re-applies the read-only seal to every already-archived ticket channel. /install
+// runs this so channels closed before the read-only rule (or reopened for writing by
+// older installs) are sealed too; channels already denying SendMessages are skipped,
+// keeping the pass idempotent. Returns { ok, failed }.
+export async function sealArchivedTickets(guild, reason = 'Seal archived ticket read-only') {
+  const sendFlag = PermissionsBitField.Flags.SendMessages;
+  let ok = 0;
+  let failed = 0;
+
+  for (const channelId of listTicketChannelIds(guild.id)) {
+    const row = getTicketByChannel(guild.id, channelId);
+    if (!row || row.status === 'open') continue;
+    const channel = await guild.channels.fetch(channelId).catch(() => null);
+    if (!channel) continue; // deleted ticket channel
+
+    // Already sealed: @everyone denies sending and no staff role re-allows it.
+    const everyoneSealed = channel.permissionOverwrites.cache.get(guild.roles.everyone.id)?.deny.has(sendFlag);
+    const staffCanSend = ticketAccessRoleIds(guild).some((id) =>
+      channel.permissionOverwrites.cache.get(id)?.allow.has(sendFlag),
+    );
+    if (everyoneSealed && !staffCanSend) continue;
+
+    try {
+      await channel.permissionOverwrites.set(archivedTicketOverwrites(guild), `${reason} (ticket #${row.id})`);
+      ok += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { ok, failed };
 }
 
 // ---------- Transcript ----------
@@ -703,7 +755,8 @@ export async function removeTicketStaffRole(guild, role, reason = 'Remove ticket
 
 // Grants every ticket staff role (staffRoleId + staffRoleIds + mod role) access to all
 // open ticket channels. Used by /install so config changes reach existing tickets (new
-// tickets always get the overwrites at creation time). Skips closed/deleted channels.
+// tickets always get the overwrites at creation time). Skips closed/archived channels -
+// they stay sealed read-only - and deleted ones.
 export async function applyTicketStaffOverwrites(guild, reason = 'Grant ticket staff access') {
   const roleIds = ticketAccessRoleIds(guild);
   if (!roleIds.length) return { ok: 0, failed: 0, roles: 0 };
@@ -713,6 +766,7 @@ export async function applyTicketStaffOverwrites(guild, reason = 'Grant ticket s
   for (const channelId of listTicketChannelIds(guild.id)) {
     const channel = await guild.channels.fetch(channelId).catch(() => null);
     if (!channel) continue; // deleted (already closed) ticket
+    if (getTicketByChannel(guild.id, channelId)?.status !== 'open') continue; // archived stays sealed
     try {
       for (const roleId of roleIds) {
         await channel.permissionOverwrites.edit(roleId, TICKET_MEMBER_FLAGS, { reason });

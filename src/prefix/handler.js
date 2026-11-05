@@ -45,6 +45,7 @@ import {
   ticketStaffRoleIds,
 } from '../services/tickets.js';
 import { formatDuration, parseDuration } from '../utils/duration.js';
+import { LOCKDOWN, isCommandAllowed, lockdownEmbed } from '../utils/lockdown.js';
 import {
   baseEmbed,
   buildActionEmbed,
@@ -1157,6 +1158,13 @@ export async function handlePrefixCommand(message, client) {
   const [cmdRaw, ...args] = raw.split(/\s+/);
   const command = ALIASES[cmdRaw.toLowerCase()];
   if (!command) return;
+
+  // Global lockdown: every prefix command beyond the kept ticket commands answers
+  // with the red disable notice instead of running.
+  if (LOCKDOWN.enabled && !isCommandAllowed(command)) {
+    await message.reply({ embeds: [lockdownEmbed()] }).catch(() => {});
+    return;
+  }
 
   try {
     await HANDLERS[command](message, args, client);
