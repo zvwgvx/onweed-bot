@@ -5,7 +5,7 @@ import { isConfiguredGuild } from '../utils/permissions.js';
 import { TICKET_BUTTON_ID, TICKET_CLOSE_BUTTON_ID, TICKET_TYPES, canManageTicket, closeTicket, getTicketForChannel, openTicket, parseTicketButtonType } from '../services/tickets.js';
 import { VERIFY_BUTTON_ID, sweepVerifyPings, verifyMember } from '../services/verify.js';
 import { SELF_ROLE_BUTTON_PREFIX, sendSelfRolePing, toggleSelfRole } from '../services/selfroles.js';
-import { isCommandAllowed, LOCKDOWN, lockdownEmbed } from '../utils/lockdown.js';
+import { canUseDuringLockdown, isCommandAllowed, LOCKDOWN, lockdownEmbed } from '../utils/lockdown.js';
 import {
   CV_INVITE_ID,
   CV_LIMIT_ID,
@@ -177,9 +177,9 @@ export async function execute(interaction, client) {
   }
 
   // Toggle buttons on the self-role panel (press = grant, press again = remove) -
-  // disabled while the bot is locked down.
+  // disabled while the bot is locked down (the bypass whitelist keeps access).
   if (interaction.isButton() && interaction.customId.startsWith(SELF_ROLE_BUTTON_PREFIX)) {
-    if (LOCKDOWN.enabled) {
+    if (LOCKDOWN.enabled && !canUseDuringLockdown(interaction.user.id)) {
       await interaction.reply({ embeds: [lockdownEmbed()], flags: MessageFlags.Ephemeral }).catch(() => {});
       return;
     }
@@ -211,8 +211,9 @@ export async function execute(interaction, client) {
   if (!command) return;
 
   // Global lockdown: every command beyond the kept systems (verify/voice/ticket)
-  // answers with the red disable notice instead of running.
-  if (LOCKDOWN.enabled && !isCommandAllowed(interaction.commandName)) {
+  // answers with the red disable notice instead of running - except the whitelist
+  // user (LOCKDOWN.bypassUserIds), who keeps full access.
+  if (!canUseDuringLockdown(interaction.user.id) && !isCommandAllowed(interaction.commandName)) {
     await interaction.reply({ embeds: [lockdownEmbed()], flags: MessageFlags.Ephemeral }).catch(() => {});
     return;
   }

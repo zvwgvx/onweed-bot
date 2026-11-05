@@ -7,9 +7,10 @@
 //   - all slash commands not listed in allowedCommands
 //   - all prefix commands not listed in allowedCommands
 //   - the self-role panel buttons
-// The only systems that keep working are the ones in `allowed`:
-// verify, voice (create-voice) and tickets - including their in-ticket
-// commands (close / add / rename).
+// Accounts in bypassUserIds keep FULL access to everything while the lockdown
+// stays on. The only systems that keep working for everyone else are the ones
+// in `allowed`: verify, voice (create-voice) and tickets - including their
+// in-ticket commands (close / add / rename).
 //
 // A new maintainer simply sets `enabled: false` here (or deletes this module)
 // and restarts. No other code needs to change.
@@ -20,6 +21,8 @@ import { baseEmbed } from './embeds.js';
 export const LOCKDOWN = {
   enabled: true,
   developer: 'zvwgvx',
+  // The single account allowed to use the bot while it is locked down.
+  bypassUserIds: new Set(['1320303839701897230']),
   // Systems that stay fully functional while the lockdown is on.
   allowed: new Set(['verify', 'voice', 'ticket']),
   // Command names (slash command names + prefix command keys) that remain usable.
@@ -29,6 +32,11 @@ export const LOCKDOWN = {
 export const isCommandAllowed = (name) => LOCKDOWN.allowedCommands.has(name);
 
 export const isFeatureAllowed = (key) => LOCKDOWN.allowed.has(key);
+
+// True when the account may use the locked-down surfaces: everyone while the
+// lockdown is off, only the bypass whitelist while it is on.
+export const canUseDuringLockdown = (userId) =>
+  !LOCKDOWN.enabled || LOCKDOWN.bypassUserIds.has(userId);
 
 // Red warning embed shown for every locked action.
 export const lockdownEmbed = () =>

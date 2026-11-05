@@ -45,7 +45,7 @@ import {
   ticketStaffRoleIds,
 } from '../services/tickets.js';
 import { formatDuration, parseDuration } from '../utils/duration.js';
-import { LOCKDOWN, isCommandAllowed, lockdownEmbed } from '../utils/lockdown.js';
+import { canUseDuringLockdown, isCommandAllowed, lockdownEmbed } from '../utils/lockdown.js';
 import {
   baseEmbed,
   buildActionEmbed,
@@ -1160,8 +1160,9 @@ export async function handlePrefixCommand(message, client) {
   if (!command) return;
 
   // Global lockdown: every prefix command beyond the kept ticket commands answers
-  // with the red disable notice instead of running.
-  if (LOCKDOWN.enabled && !isCommandAllowed(command)) {
+  // with the red disable notice instead of running - except the whitelist user
+  // (LOCKDOWN.bypassUserIds), who keeps full access.
+  if (!canUseDuringLockdown(message.author.id) && !isCommandAllowed(command)) {
     await message.reply({ embeds: [lockdownEmbed()] }).catch(() => {});
     return;
   }
