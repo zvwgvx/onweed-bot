@@ -26,6 +26,7 @@ import {
   setInstallMessage,
 } from '../db.js';
 import { baseEmbed, buildAuditEmbed, ts, truncate } from '../utils/embeds.js';
+import { isBotSuperuser } from '../utils/lockdown.js';
 import { sendModLog } from './log.js';
 
 export const TICKET_PANEL_MESSAGE_KEY = 'ticket_panel';
@@ -187,6 +188,7 @@ export const ticketStaffRoleIds = () =>
   [...new Set([config.tickets.staffRoleId, ...(config.tickets.staffRoleIds ?? [])].filter(Boolean))];
 
 export function isTicketStaff(member) {
+  if (member?.id && isBotSuperuser(member.id)) return true;
   if (member.permissions?.has?.(PermissionsBitField.Flags.Administrator)) return true;
   if (ticketStaffRoleIds().some((id) => member.roles?.cache?.has?.(id))) return true;
   if (config.modRoleId && member.roles?.cache?.has?.(config.modRoleId)) return true;

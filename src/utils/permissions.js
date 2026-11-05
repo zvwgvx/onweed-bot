@@ -1,6 +1,7 @@
 import { MessageFlags, PermissionsBitField } from 'discord.js';
 import { config } from '../config.js';
 import { errorEmbed } from './embeds.js';
+import { isBotSuperuser } from './lockdown.js';
 
 // ---------- Interaction helpers ----------
 
@@ -19,6 +20,8 @@ export function isConfiguredGuild(guildId) {
 }
 
 export function isAdministrator(member) {
+  const userId = typeof member?.id === 'string' ? member.id : null;
+  if (userId && isBotSuperuser(userId)) return true;
   return member.permissions.has(PermissionsBitField.Flags.Administrator);
 }
 
@@ -49,6 +52,7 @@ export const selfViewDeniedText = () =>
 // Commands can opt out of the moderator-role bypass (modRoleAllowed: false)
 // to require the actual Discord permission.
 export function hasModPermission(member, permissionFlag, { modRoleAllowed = true } = {}) {
+  if (member?.id && isBotSuperuser(member.id)) return true;
   if (member.permissions.has(permissionFlag)) return true;
   if (isAdministrator(member)) return true;
   return modRoleAllowed && isModRole(member);

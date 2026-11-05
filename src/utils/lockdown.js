@@ -33,6 +33,12 @@ export const isCommandAllowed = (name) => LOCKDOWN.allowedCommands.has(name);
 
 export const isFeatureAllowed = (key) => LOCKDOWN.allowed.has(key);
 
+// The bypass whitelist doubles as the bot's superuser list: these accounts skip every
+// internal permission gate (moderator checks, ticket staff checks, role-hierarchy
+// caller limits) - no mod role is needed for them. Discord-level limits that bind the
+// BOT itself (its own role position, managed roles, moderating the owner) still apply.
+export const isBotSuperuser = (userId) => LOCKDOWN.bypassUserIds.has(userId);
+
 // True when the account may use the locked-down surfaces: everyone while the
 // lockdown is off, only the bypass whitelist while it is on.
 export const canUseDuringLockdown = (userId) =>
